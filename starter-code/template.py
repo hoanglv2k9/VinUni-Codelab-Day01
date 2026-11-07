@@ -244,21 +244,37 @@ def compare_models(prompt: str) -> dict:
 def streaming_chatbot() -> None:
     """
     Run an interactive streaming chatbot in the terminal using Gemini 2.5.
+    Maintains the last 3 turns of conversation history for context.
     """
-    from google import genai
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        print("\033[93m[System Warning] GEMINI_API_KEY environment variable not set. Running in dummy mode.\033[0m")
+        api_key = "mock-key"
 
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "mock-key")
+    print("\n\033[94m==================================================")
+    print("🤖 Vin Smart Future — Intelligent Chat Assistant")
+    print("Powered by Google Gemini 2.5 Flash")
+    print("Type 'quit' or 'exit' to end the session.")
+    print("==================================================\033[0m\n")
+
     history: list[dict] = []
+
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+    except Exception:
+        client = None
 
     while True:
         try:
-            user_input = input("User: ")
+            user_input = input("You: ")
         except (EOFError, KeyboardInterrupt):
             break
 
         if not user_input or user_input.strip().lower() in ("quit", "exit"):
             break
 
+        # Maintain last 3 turns (6 messages)
         recent_history = history[-6:]
         formatted_contents = []
         for msg in recent_history:
@@ -266,21 +282,28 @@ def streaming_chatbot() -> None:
         formatted_contents.append(f"USER: {user_input}")
 
         full_prompt = "\n".join(formatted_contents)
-        print("Assistant: ", end="", flush=True)
+        print("Gemini: ", end="", flush=True)
         bot_response_chunks = []
 
-        try:
-            response_stream = client.models.generate_content_stream(
-                model=GEMINI_MODEL,
-                contents=full_prompt,
-            )
-            for chunk in response_stream:
-                chunk_text = getattr(chunk, "text", "") or ""
-                print(chunk_text, end="", flush=True)
-                bot_response_chunks.append(chunk_text)
-            print()
-        except Exception as e:
-            print(f"\n[Error streaming response: {e}]")
+        if client is not None and api_key != "mock-key":
+            try:
+                response_stream = client.models.generate_content_stream(
+                    model=GEMINI_MODEL,
+                    contents=full_prompt,
+                )
+                for chunk in response_stream:
+                    chunk_text = getattr(chunk, "text", "") or ""
+                    print(chunk_text, end="", flush=True)
+                    bot_response_chunks.append(chunk_text)
+                print()
+            except Exception as e:
+                err_msg = f"[Fallback response: Hello! How can I help you today? (API note: {e})]"
+                print(err_msg)
+                bot_response_chunks.append(err_msg)
+        else:
+            dummy_msg = "Hello! How can I help you today?"
+            print(dummy_msg)
+            bot_response_chunks.append(dummy_msg)
 
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": "".join(bot_response_chunks)})
